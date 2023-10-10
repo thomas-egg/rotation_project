@@ -32,11 +32,11 @@ args = parser.parse_args()
 temp = 300*unit.kelvin
 gamma = 10/unit.picoseconds
 dt = 1*unit.femtoseconds
-nsteps = 300000000
+nsteps = 1000000
 mass = 30.0*unit.dalton*(unit.nanometer/unit.radians)**2
 Ks = 1000*unit.kilojoules_per_mole/unit.radians**2
 Ts =1500*unit.kelvin
-limit = 180*unit.degrees
+limit = pi
 sigma = pi/10
 frequency=500
 height = 2.*unit.kilojoules_per_mole
@@ -46,9 +46,6 @@ deposition_period = 200
 
 # MAIN
 if __name__ == '__main__':
-    
-    # Seed process
-    seed = random.SystemRandom().randint(0, 2**31) if args.seed is None else args.seed
 
     # Get data
     pdb = app.PDBFile('adp.pdb')
@@ -65,14 +62,18 @@ if __name__ == '__main__':
     inpcrd = app.AmberInpcrdFile(f'{args.case}.crd')
     prmtop = app.AmberPrmtopFile(f'{args.case}.prmtop')
 
-    system = prmtop.createSystem(
-        nonbondedMethod=app.NoCutoff if prmtop.topology.getNumChains() == 1 else app.PME,
-        implicitSolvent=app.GBn2,
-        implicitSolventSaltConc=args.salt_molarity*unit.moles/unit.liter,
-        constraints=None,
-        rigidWater=True,
+    system = app.ForceField('amber03.xml').createSystem(
+        pdb.topology,
+        nonbondedMethod=app.NoCutoff,
+        constraints=app.HBonds,
         removeCMMotion=False
     )
+    
+    # CVs
+    phi = ufedmm.CollectiveVariable('phi', openmm.CustomTorsionForce('theta'))
+    phi.force.addTorsion(*dihedral_atoms['phi'])    
+    psi = ufedmm.CollectiveVariable('psi', openmm.CustomTorsionForce('theta'))
+    psi.force.addTorsion(*dihedral_atoms['psi'])
 
     # Phi, psi, and omega angles
     s_phi = ufedmm.DynamicalVariable('s_phi', -limit, limit, mass, Ts, phi, Ks, sigma=sigma)
@@ -80,18 +81,16 @@ if __name__ == '__main__':
 
 
     # Setup simulation
-    ufed = ufedmm.UnifiedFreeEnergyDynamics([s_phi, s_psi], temp, height, period)
+    ufed = ufedmm.UnifiedFreeEnergyDynamics([s_phi, s_psi], temp, height, deposition_period)
     ufedmm.serialize(ufed, 'ufed_object.yml')
-    integrator = ufedmm.MiddleMassiveGGMTIntegrator(temp,40*unit.femtoseconds, dt, scheme='VV-Middle')
-    integrator.setRandomNumberSeed(seed)
+    integrator = ufedmm.GeodesicLangevinIntegrator(temp, gamma, 2*unit.femtoseconds)
     platform = openmm.Platform.getPlatformByName(args.platform)
     simulation = ufed.simulation(prmtop.topology, system, integrator, platform)
     simulation.context.setPositions(inpcrd.positions)
-    simulation.context.setVelocitiesToTemperature(temp, seed)
+    simulation.context.setVelocitiesToTemperature(temp)
     output1 = ufedmm.Tee(stdout, 'COLVAR_adp')
-    reporter1 = ufedmm.StateDataReporter(output1,10, step=True, multipleTemperatures=False,hillHeights=False ,variables=True,speed=True,separator='\t')
+    reporter1 = ufedmm.StateDataReporter(output1, 100, step=True, multipleTemperatures=True, variables=True,speed=True, speed=True, separator='\t')
     simulation.reporters.append(reporter1)
 
     # Run simulation
-    simulation.minimizeEnergy()
     simulation.step(nsteps)
