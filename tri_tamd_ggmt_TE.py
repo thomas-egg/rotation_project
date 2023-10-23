@@ -42,8 +42,13 @@ prmtop = app.AmberPrmtopFile('trisarcosine.prmtop')
 pdb.topology.setUnitCellDimensions([2.5*unit.nanometers]*3)
 atoms = [f'{a.name}:{a.residue.name}:{a.residue.index+1}' for a in pdb.topology.atoms()]
 dihedral_atoms = {
-        'phi' : map(atoms.index, ['C2:ace:1', 'N:SAR:2', 'CA:SAR:2', 'C:SAR:2']),
-        'psi' : map(atoms.index, ['N:SAR:2', 'CA:SAR:2', 'C:SAR:2', 'N:SAR:3'])
+        'omega_1' : map(atoms.index, ['C1:ace:1', 'C2:ace:1', 'N:SAR:2', 'CA:SAR:2']),
+        'phi_1' : map(atoms.index, ['C2:ace:1', 'N:SAR:2', 'CA:SAR:2', 'C:SAR:2']),
+        'psi_1' : map(atoms.index, ['N:SAR:2', 'CA:SAR:2', 'C:SAR:2', 'N:SAR:3']),
+        'omega_2' : map(atoms.index, ['CA:SAR:2', 'C:SAR:2', 'N:SAR:3', 'CA:SAR:3']),
+        'phi_2' : map(atoms.index, ['C:SAR:2', 'N:SAR:3', 'CA:SAR:3', 'C:SAR:3']),
+        'psi_2' : map(atoms.index, ['N:SAR:3', 'CA:SAR:3', 'C:SAR:3', 'N2:ndm:4']),
+        'omega_3' : map(atoms.index, ['CA:SAR:3', 'C:SAR:3', 'N2:ndm:4', 'C6:ndm:4'])
     }
 
 print(atoms)
@@ -61,17 +66,32 @@ system = prmtop.createSystem(
 
 
 # Add forces
-phi = ufedmm.CollectiveVariable('phi', openmm.CustomTorsionForce('theta'))
-phi.force.addTorsion(*dihedral_atoms['phi'], [])
-psi = ufedmm.CollectiveVariable('psi', openmm.CustomTorsionForce('theta'))
-psi.force.addTorsion(*dihedral_atoms['psi'], [])
+omega_1 = ufedmm.CollectiveVariable('omega_1', openmm.CustomTorsionForce('theta')) 
+omega_1.force.addTorsion(*dihedral_atoms['omega_1'], [])
+phi_1 = ufedmm.CollectiveVariable('phi_1', openmm.CustomTorsionForce('theta'))
+phi_1.force.addTorsion(*dihedral_atoms['phi_1'], [])
+psi_1 = ufedmm.CollectiveVariable('psi_1', openmm.CustomTorsionForce('theta'))
+psi_1.force.addTorsion(*dihedral_atoms['psi_1'], [])
+omega_2 = ufedmm.CollectiveVariable('omega_2', openmm.CustomTorsionForce('theta')) 
+omega_2.force.addTorsion(*dihedral_atoms['omega_2'], [])
+phi_2 = ufedmm.CollectiveVariable('phi_2', openmm.CustomTorsionForce('theta'))
+phi_2.force.addTorsion(*dihedral_atoms['phi_2'], [])
+psi_2 = ufedmm.CollectiveVariable('psi_2', openmm.CustomTorsionForce('theta'))
+psi_2.force.addTorsion(*dihedral_atoms['psi_2'], [])
+omega_3 = ufedmm.CollectiveVariable('omega_3', openmm.CustomTorsionForce('theta')) 
+omega_3.force.addTorsion(*dihedral_atoms['omega_3'], [])
 
 # Initialize extended variables
-s_phi = ufedmm.DynamicalVariable('s_phi', -limit, limit, mass, Ts, phi, Ks, sigma=None)
-s_psi = ufedmm.DynamicalVariable('s_psi', -limit, limit, mass, Ts, psi, Ks, sigma=None)
+s_omega_1 = ufedmm.DynamicalVariable('s_omega_1', -limit, limit, mass, Ts, phi, Ks, sigma=None)
+s_phi_1 = ufedmm.DynamicalVariable('s_phi_1', -limit, limit, mass, Ts, phi, Ks, sigma=None)
+s_psi_1 = ufedmm.DynamicalVariable('s_psi_1', -limit, limit, mass, Ts, psi, Ks, sigma=None)
+s_omega_2 = ufedmm.DynamicalVariable('s_omega_2', -limit, limit, mass, Ts, phi, Ks, sigma=None)
+s_phi_2 = ufedmm.DynamicalVariable('s_phi_2', -limit, limit, mass, Ts, phi, Ks, sigma=None)
+s_psi_2 = ufedmm.DynamicalVariable('s_psi_2', -limit, limit, mass, Ts, psi, Ks, sigma=None)
+s_omega_3 = ufedmm.DynamicalVariable('s_omega_3', -limit, limit, mass, Ts, phi, Ks, sigma=None)
 
 # Set up simulation
-ufed = ufedmm.UnifiedFreeEnergyDynamics([s_phi, s_psi], temp, height, deposition_period)
+ufed = ufedmm.UnifiedFreeEnergyDynamics([s_omega_1, s_phi_1, s_psi_1, s_omega_2, s_phi_2, s_psi_2, s_omega_3], temp, height, deposition_period)
 ufedmm.serialize(ufed, 'ufed_object.yml')
 integrator = ufedmm.MiddleMassiveGGMTIntegrator(temp,40*unit.femtoseconds, dt, scheme='VV-Middle')
 integrator.setRandomNumberSeed(seed)
@@ -79,7 +99,7 @@ platform = openmm.Platform.getPlatformByName(args.platform)
 simulation = ufed.simulation(prmtop.topology, system, integrator, platform)
 simulation.context.setPositions(pdb.positions)
 simulation.context.setVelocitiesToTemperature(temp, seed)
-output = ufedmm.Tee(stdout, 'tri_output.csv')
+output = ufedmm.Tee(stdout, 'tri_output_2.csv')
 reporter = ufedmm.StateDataReporter(output, 10, step=True, multipleTemperatures=False, hillHeights=False, variables=True, speed=True)
 simulation.reporters.append(reporter)
 
