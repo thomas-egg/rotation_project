@@ -15,15 +15,9 @@ from simtk import openmm, unit
 from simtk.openmm import app
 from sys import stdout, float_info
 
-# Specify solvent models
-gb_models = ['HCT', 'OBC1', 'OBC2', 'GBn', 'GBn2']
-
 # Initialize parser and supply arguments
 parser = argparse.ArgumentParser()
 parser.add_argument('--case', dest='case', help='the simulation case', default='adp')
-parser.add_argument('--implicit-solvent', dest='gb_model', help='an implicit solvent model', choices=gb_models)
-parser.add_argument('--salt-molarity', dest='salt_molarity', help='the salt molarity', type=float, default=float_info.min)
-parser.add_argument('--seed', dest='seed', help='the RNG seed')
 parser.add_argument('--platform', dest='platform', help='the computation platform', default='CPU')
 parser.add_argument('--print', dest='print', help='print results?', choices=['yes', 'no'], default='yes')
 args = parser.parse_args()
@@ -58,10 +52,6 @@ if __name__ == '__main__':
         'psi': map(atoms.index, ['N:ALA', 'CA:ALA', 'C:ALA', 'N:NME']),
     }
 
-    # Create system
-    inpcrd = app.AmberInpcrdFile(f'{args.case}.crd')
-    prmtop = app.AmberPrmtopFile(f'{args.case}.prmtop')
-
     system = app.ForceField('amber03.xml').createSystem(
         pdb.topology,
         nonbondedMethod=app.NoCutoff,
@@ -71,9 +61,9 @@ if __name__ == '__main__':
     
     # CVs
     phi = ufedmm.CollectiveVariable('phi', openmm.CustomTorsionForce('theta'))
-    phi.force.addTorsion(*dihedral_atoms['phi'])    
+    phi.force.addTorsion(*dihedral_atoms['phi'], [])    
     psi = ufedmm.CollectiveVariable('psi', openmm.CustomTorsionForce('theta'))
-    psi.force.addTorsion(*dihedral_atoms['psi'])
+    psi.force.addTorsion(*dihedral_atoms['psi'], [])
 
     # Phi, psi, and omega angles
     s_phi = ufedmm.DynamicalVariable('s_phi', -limit, limit, mass, Ts, phi, Ks, sigma=sigma)
@@ -85,8 +75,8 @@ if __name__ == '__main__':
     ufedmm.serialize(ufed, 'ufed_object.yml')
     integrator = ufedmm.GeodesicLangevinIntegrator(temp, gamma, 2*unit.femtoseconds)
     platform = openmm.Platform.getPlatformByName(args.platform)
-    simulation = ufed.simulation(prmtop.topology, system, integrator, platform)
-    simulation.context.setPositions(inpcrd.positions)
+    simulation = ufed.simulation(pdb.topology, system, integrator, platform)
+    simulation.context.setPositions(pdb.positions)
     simulation.context.setVelocitiesToTemperature(temp)
     output1 = ufedmm.Tee(stdout, 'COLVAR_adp')
     reporter1 = ufedmm.StateDataReporter(output1, 100, step=True, multipleTemperatures=True, variables=True,speed=True, speed=True, separator='\t')
